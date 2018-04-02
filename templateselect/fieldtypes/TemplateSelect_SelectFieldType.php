@@ -3,12 +3,14 @@ namespace Craft;
 
 class TemplateSelect_SelectFieldType extends BaseFieldType
 {
-    private $templatePaths = [];
+    private $directoryPaths = [];
     private $filteredTemplates = [];
+    private $templatesPath;
     
     public function __construct()
     {
-        $this->filteredTemplatesarray[''] = Craft::t('No template selected');
+        $this->filteredTemplates[''] = Craft::t('No template selected');
+        $this->templatesPath = $siteTemplatesPath = craft()->path->getSiteTemplatesPath();
     }
 
     public function getName()
@@ -23,7 +25,7 @@ class TemplateSelect_SelectFieldType extends BaseFieldType
 
     public function getInputHtml($name, $value)
     {
-        $this->getTemplatePaths();
+        $this->getDirectoryPaths();
         $this->getTemplates();
 
         // Render field
@@ -33,12 +35,9 @@ class TemplateSelect_SelectFieldType extends BaseFieldType
             'options' => $this->filteredTemplates,
         ));
     }
-    
-    private function getTemplatePaths()
-    {
 
-        // Get site templates path
-        $templatesPath = $siteTemplatesPath = craft()->path->getSiteTemplatesPath();
+    private function getDirectoryPaths()
+    {
 
         // Check if the templates path is overriden by configuration
         // TODO: Normalize path
@@ -47,19 +46,25 @@ class TemplateSelect_SelectFieldType extends BaseFieldType
         if ($limitToSubfolder) {
             if (is_array($limitToSubfolder)) {
                 foreach ($limitToSubfolder as $subFolder) {
-                    $templatePath = $templatesPath . rtrim($subFolder, '/') . '/';
+                    $subfolder = rtrim($subFolder, '/');
                     
-                    $this->validateTemplatePath($templatePath);
+                    $directoryPath = $this->templatesPath . $subFolder . '/';
                     
-                    $this->templatePaths[] = $templatePath;
+                    $this->validateTemplatePath($directoryPath);
+                    
+                    $this->directoryPaths[] = $directoryPath;
                 }
             } else {
-                $templatePath = $templatesPath . rtrim($limitToSubfolder, '/') . '/';
+                $subfolder = rtrim($limitToSubfolder, '/');
                 
-                $this->validateTemplatePath($templatePath);
+                $directoryPath = $this->templatesPath . $subfolder . '/';
                 
-                $this->templatePaths[] = $templatePath;
+                $this->validateTemplatePath($directoryPath);
+                
+                $this->directoryPaths[] = $directoryPath;
             }
+        } else {
+            $this->directoryPaths[] = $this->templatesPath;
         }
         
         return;
@@ -67,26 +72,38 @@ class TemplateSelect_SelectFieldType extends BaseFieldType
     
     private function getTemplates()
     {
-        foreach ($this->templatePaths as $templatesPath) {
-         
+        foreach ($this->directoryPaths as $directoryPath) {
+
             // Get folder contents
-            $templates = IOHelper::getFolderContents($templatesPath, true);
+            $templates = IOHelper::getFolderContents($directoryPath, true);
 
             // Turn array into ArrayObject
             $templates = new \ArrayObject($templates);
 
             // Iterate over template list
-            // * Remove full path
-            // * Remove folders from list
             for ($list = $templates->getIterator(); $list->valid(); $list->next()) {
                 $filename = $list->current();
                 
-                $filename = str_replace(str_replace("\\", "/", realpath($templatesPath)), '', $filename);
-                $filenameIncludingSubfolder = ($limitToSubfolder) ? $limitToSubfolder . $filename : $filename;
+                // Get parts of full template path
+                $parts = pathinfo($filename);
+
+                // set templates filename (without path)
+                $filename = $parts['basename'];
+                
+                // remove absolute path from template path to make craft template compatible
+                $localisedPath = $parts['dirname'];
+                $localisedPath = str_replace($this->templatesPath, '', $localisedPath);
+                
+                // make localised path windows server compatible
+                $normalisedPath = str_replace("\\", "/", $localisedPath) . '/';
+                
+                // append filename to localised directory if applicable
+                $fullPath = ($normalisedPath) ? $normalisedPath . $filename : $filename;
+                
                 $isTemplate = preg_match("/(.html|.twig)$/u", $filename);
                 
                 if ($isTemplate) {
-                    $this->filteredTemplates[$filenameIncludingSubfolder] = $filename;
+                    $this->filteredTemplates[$fullPath] = $filename;
                 }
             }
         }
